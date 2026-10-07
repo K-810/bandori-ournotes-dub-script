@@ -183,6 +183,7 @@ node tools/vtool.mjs --pack <语料目录> call nyamu      # 她怎么称呼别�
 |---|---|
 | Chatbox 桌面版 | 设置 → 技能 → 从本地文件夹或 GitHub 安装 |
 | Claude Code | 放进 `~/.claude/skills/` |
+| Deepseek Harness | 若存在多个二创项目，建议放进全局skills |
 | 其他认 `SKILL.md` 的 agent | 放进 `~/.agents/skills/` |
 
 技能名中的连字符请勿改为下划线，否则部分平台的校验会直接报错 `missing required fields`。
