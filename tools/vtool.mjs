@@ -15,7 +15,7 @@ import readline from 'node:readline';
 
 // ---------- 参数 ----------
 const argv = process.argv.slice(2);
-const opt = { pack: process.env.OURNOTES_PACK || '', limit: 10, cn: false, top: 10, in: '', out: '' };
+const opt = { pack: process.env.OURNOTES_PACK || '', limit: 10, cn: false, top: 10, in: '', out: '', src: '' };
 const rest = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
@@ -25,6 +25,7 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === '--cn') opt.cn = true;
   else if (a === '--in') opt.in = argv[++i];
   else if (a === '--out') opt.out = argv[++i];
+  else if (a === '--src') opt.src = argv[++i];
   else rest.push(a);
 }
 const [cmd, ...args] = rest;
@@ -32,8 +33,9 @@ const [cmd, ...args] = rest;
 if (!cmd || cmd === '-h' || cmd === '--help') { usage(); process.exit(0); }
 // model 子命令只看模型文件，不需要语料
 if (cmd === 'model') { await cmdModel(args[0]); process.exit(0); }
-// read 子命令是纯文字替换表，同样不需要语料包（放在这里会撞上 READING 的 TDZ，故留在分发处执行）
-if (cmd !== 'read' && !opt.pack) { console.error('缺少 --pack <语料目录>（或设置环境变量 OURNOTES_PACK）'); console.error('取数说明见 references/07-取数说明.md'); process.exit(2); }
+// read / audit 是纯文字处理（注音表、稿子体检），同样不需要语料包
+const NOPACK = ['read', 'audit'];
+if (!NOPACK.includes(cmd) && !opt.pack) { console.error('缺少 --pack <语料目录>（或设置环境变量 OURNOTES_PACK）'); console.error('取数说明见 references/07-取数说明.md'); process.exit(2); }
 
 const TSV = path.join(opt.pack || '.', 'ournotes_对白全表.tsv');
 const IDX_CANDS = [
@@ -43,20 +45,21 @@ const IDX_CANDS = [
   path.join(opt.pack || '.', '结构化', 'ournotes_index.tsv'),
 ];
 const IDX = IDX_CANDS.find((f) => fs.existsSync(f)) || IDX_CANDS[0];
-if (cmd !== 'read' && !fs.existsSync(TSV)) { console.error(`找不到 ${TSV}\n→ 请确认 --pack 指向含有 ournotes_对白全表.tsv 的目录（见 references/07-取数说明.md）`); process.exit(2); }
+if (!NOPACK.includes(cmd) && !fs.existsSync(TSV)) { console.error(`找不到 ${TSV}\n→ 请确认 --pack 指向含有 ournotes_对白全表.tsv 的目录（见 references/07-取数说明.md）`); process.exit(2); }
 
 function usage() {
   console.log(`vtool —— 语体取数（零依赖）
 
-  node vtool.mjs --pack <语料目录> self  <角色>            语言指纹：自称 / 句末敬体率 / 语尾 / 句长
+  node vtool.mjs --pack <语料目录> self  <角色>            语言指纹：自称 / 敬体率 / 语尾 / 句长
   node vtool.mjs --pack <语料目录> tail  <角色> [语尾]     该语尾的真实例句（省略语尾则取该角色首位）
   node vtool.mjs --pack <语料目录> call  <角色> [对象]     称呼取证：○○さん / ちゃん / 先輩 / 呼び捨て
   node vtool.mjs --pack <语料目录> map   [角色]            中日名对应表（call 用的那张，可查绰号）
   node vtool.mjs model  <模型目录>                   列出一个 Live2D 模型可用的表情 / 动作名
   node vtool.mjs --pack <语料目录> exp   <集号> [角色]     该集的表情 / 动作码（需 ournotes_index.tsv）
   node vtool.mjs --pack <语料目录> line  <集号>#<行号>     定位一句，带前后文
-  node vtool.mjs read                                   注音表（25 人官方读法 + 绰号），给 TTS 用
+  node vtool.mjs read                                   注音表（26 人官方读法 + 绰号），给 TTS 用
   node vtool.mjs read --in <稿.txt> --out <注音稿.txt>    把稿子里的名字批量换成假名
+  node vtool.mjs audit <稿.txt> [--src <中文原文.txt>]    稿子体检：敬体率 / 句长 / 自称 / 句尾多样性 / 直译形状
 
   选项：--limit N（默认 10） · --top N（语尾取前 N 个，默认 10） · --cn（额外输出官方中译）
 
@@ -76,6 +79,7 @@ const READING = [
   ['浜崎まほろ', 'はまさきまほろ'], ['和泉朋花', 'いずみほうか'], ['須賀蕾叶', 'すがらいか'],
   ['馬橋心玖', 'まはしみく'], ['矢倉蓬咲', 'やくらよもぎ'], ['梅里ちえり', 'うめざとちえり'],
   ['四宮寧月', 'しのみやしずく'], ['野良猫', 'のらねこ'],
+  ['沢海奏多', 'さわみかなた'],
   ['高松', 'たかまつ'], ['燈', 'ともり'], ['千早', 'ちはや'], ['愛音', 'あのん'],
   ['要', 'かなめ'], ['楽奈', 'らな'], ['長崎', 'ながさき'],
   ['椎名', 'しいな'], ['立希', 'たき'], ['豊川', 'とがわ'], ['祥子', 'さきこ'],
@@ -89,6 +93,7 @@ const READING = [
   ['須賀', 'すが'], ['蕾叶', 'らいか'], ['馬橋', 'まはし'], ['心玖', 'みく'],
   ['矢倉', 'やくら'], ['蓬咲', 'よもぎ'], ['梅里', 'うめざと'], ['四宮', 'しのみや'],
   ['寧月', 'しずく'],
+  ['沢海', 'さわみ'], ['奏多', 'かなた'],
   ['MyGO!!!!!', 'マイゴ'], ['Ave Mujica', 'アヴェムジカ'], ['millsage', 'ミルサージュ'],
   ['一家Dumb Rock!', 'いっかだんらん'],
 ].sort((a, b) => b[0].length - a[0].length);
@@ -142,7 +147,7 @@ function cmdRead() {
 // ---------- 读表 ----------
 // 一次流式读完，累积需要的统计（表约数 MB，命中内存没问题）
 const SELF = ['わたくし', 'わたし', 'あたし', 'アタシ', 'あたい', '僕', 'ぼく', '俺', 'おれ', 'うち', '自分', 'わし', '拙者', '我々', '僕ら', '私達', '私たち', '私'];
-const POLITE_END = /(です|ます|ました|ません|でしょう|ですわ|ますわ|でござい|くださいませ|いたします|ございます)[。！？…～〜!?]*$/;
+const POLITE_END = /(です|ます|ました|ません|ましょう|でしょう|ですわ|ますわ)/;
 
 // 语尾判定的硬拒名单：敬称、括号、引用符、纯标点 —— 这些出现在句末是噪声，不是语尾
 const TAIL_STOP = [
@@ -380,7 +385,7 @@ async function cmdSelf(q) {
   console.log(`句数\t${f.n}`);
   console.log(`覆盖集数\t${f.eps}`);
   console.log(`平均句长(日文字符)\t${f.lineLen.toFixed(1)}`);
-  console.log(`句末敬体率\t${pct(f.politeRate)}`);
+  console.log(`敬体率\t${pct(f.politeRate)}（含句中，口径见 05/09）`);
   console.log('');
   console.log(`自称\t次数\t占比\t全库占比`);
   if (!f.self.length) console.log(`（无）\t0\t0%\t—`);
@@ -666,11 +671,128 @@ async function cmdModel(p) {
   }
 }
 
+// ---------- audit：稿子体检（不需要语料包） ----------
+// 基线不另存一份，直接从 references/09-语体基线.md 的表读——改那张表就等于改基线，两处不会漂。
+// 口径：敬体率＝「一次发言里出现です・ます 类的比例」（含句中，不是只数句末），与 05 第五节一致。
+function loadBaseline() {
+  const f = new URL('../references/09-语体基线.md', import.meta.url);
+  if (!fs.existsSync(f)) return null;
+  const base = {};
+  for (const line of fs.readFileSync(f, 'utf8').split('\n')) {
+    const c = line.split('|').map((x) => x.trim());
+    if (c.length < 7) continue;
+    const m = (c[2] || '').match(/^`([a-z_]+)`$/);
+    if (!m) continue;
+    const polite = Number((c[4] || '').replace(/[^\d.]/g, ''));
+    const len = Number((c[5] || '').replace(/[^\d.]/g, ''));
+    if (!Number.isFinite(polite) || !Number.isFinite(len) || !(c[4] || '').match(/\d/) || !(c[5] || '').match(/\d/)) continue;
+    const selfW = ((c[3] || '').match(/`([^`]+)`/) || [])[1] || '';
+    const selfPct = Number((((c[3] || '').match(/([\d.]+)\s*%/) || [])[1]) || 0);
+    base[m[1]] = { cn: c[1].replace(/\*\*/g, ''), self: selfW, selfPct, polite, len };
+  }
+  return Object.keys(base).length >= 20 ? base : null;
+}
+// 这几个自称基本是「谁的专属」——用错人比用错语尾更刺耳
+const OWNED_SELF = { わたくし: ['sakiko', 'oblivionis'], アタシ: ['nyamu', 'amoris'], ぼく: ['arale'], 僕: ['tomori', 'doloris', 'uika'], 俺: ['yomogi', 'amoris'] };
+const cnLen = (s) => (s.match(/[\u4e00-\u9fff\u3040-\u30ff]/g) || []).length;
+const jpLen = (s) => (s.replace(/[。、！？…〜～♪「」『』（）\s]/g, '').match(/[\u4e00-\u9fff\u3040-\u30ff々ー]/g) || []).length;
+
+function cmdAudit(file, srcFile) {
+  if (!file || !fs.existsSync(file)) { console.error('用法：audit <稿子.txt> [--src <中文原文.txt>]'); process.exit(2); }
+  const base = loadBaseline();
+  if (!base) { console.error('读不到 references/09-语体基线.md 的表，无法取基线'); process.exit(2); }
+  const byCn = {};
+  for (const id of Object.keys(base)) byCn[base[id].cn] = id;
+  // 作者常写简称（只写名、或用另一个通行汉字写法）；这里认这些，免得整段判成「名单外」
+  const ALIAS_CN = {
+    灯: 'tomori', 爱音: 'anon', 乐奈: 'rana', 素世: 'soyo', 爽世: 'soyo', 立希: 'taki',
+    祥子: 'sakiko', 初华: 'uika', 睦: 'mutsumi', 海铃: 'umiri', 若麦: 'nyamu', 喵梦: 'nyamu',
+    阿拉蕾: 'arale', 野乃花: 'nonoka', 律: 'ritsu', 都子: 'miyako', 由乃: 'yuno',
+    萤: 'hotaru', 枣: 'natsume', 凪: 'nagi', 茉幌: 'mahoro', 真幌: 'mahoro', 朋花: 'houka',
+    蕾叶: 'raika', 心玖: 'miku', 蓬咲: 'yomogi', 千樱梨: 'chieri', 宁月: 'shizuku', 奏多: 'kanata',
+  };
+  const resolve = (s) => {
+    const k = String(s || '').trim();
+    if (base[k]) return k;
+    if (byCn[k]) return byCn[k];
+    if (ALIAS_CN[k] && base[ALIAS_CN[k]]) return ALIAS_CN[k];
+    const hit = Object.keys(base).filter((id) => k && base[id].cn.includes(k));
+    return hit.length === 1 ? hit[0] : '';
+  };
+  const rows = [];
+  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+    if (!line.trim() || /^[【\[]/.test(line.trim()) || /^#/.test(line)) continue;
+    const i = line.search(/[：:]/);
+    if (i < 0) continue;
+    rows.push({ who: line.slice(0, i).trim(), jp: line.slice(i + 1).trim() });
+  }
+  if (!rows.length) { console.error('稿子里没读到「说话人：台词」的行'); process.exit(2); }
+  const spk = {};
+  for (const r of rows) (spk[r.who] ||= []).push(r.jp);
+  const flag = [];
+  console.log(`稿子\t${file}\t${rows.length} 句\t${Object.keys(spk).length} 个说话人\n`);
+  console.log('说话人\t句数\t敬体率(实测/基线)\t句长(实测/基线)\t自称');
+  for (const who of Object.keys(spk)) {
+    const list = spk[who], id = resolve(who), b = base[id];
+    const n = list.length;
+    const polite = list.filter((x) => POLITE_END.test(x)).length / n;
+    const len = list.reduce((a, x) => a + jpLen(x), 0) / n;
+    const selves = [...new Set(list.flatMap((x) => Object.keys(OWNED_SELF).concat(['わたし', '私', 'あたし', 'うち', '自分']).filter((s) => x.includes(s))))];
+    const pct = (x) => (x * 100).toFixed(0) + '%';
+    if (!b) {
+      console.log(`${who}\t${n}\t${pct(polite)}\t${len.toFixed(1)}\t${selves.join(' ') || '—'}\t（名单外，无基线）`);
+      for (const s of selves) if (OWNED_SELF[s]) flag.push(`${who}「${who}」用了专属自称 ${s}——名单外的角色，先确认这是你要的语体`);
+      continue;
+    }
+    console.log(`${who}\t${n}\t${pct(polite)} / ${b.polite}%\t${len.toFixed(1)} / ${b.len}${n < 8 ? '（句太少不判句长）' : ''}\t${selves.join(' ') || '—'}`);
+    if (n >= 4) {
+      const dp = Math.abs(polite * 100 - b.polite);
+      if (dp > 15) flag.push(`${who} 敬体率 ${pct(polite)}，基线 ${b.polite}%——差 ${dp.toFixed(0)} 个百分点${b.polite > 15 && b.polite < 85 ? '（她是混合档，随场合浮动；先确认这一场的关系）' : '，先查 05 第五节的敬体档'}`);
+    }
+    if (n >= 8) {
+      const dl = Math.abs(len - b.len) / b.len;
+      if (dl > 0.4) flag.push(`${who} 平均句长 ${len.toFixed(1)}，基线 ${b.len}——差 ${(dl * 100).toFixed(0)}%，短句型角色要砍句、长句型角色不许缩`);
+      const tails = [...new Set(list.map((x) => (x.replace(/[。！？…〜～♪\s]+$/, '').slice(-1) || '')))];
+      if (tails.length <= 2 && b.len >= 15) flag.push(`${who} 句尾只有 ${tails.length} 种（${tails.join(' ')}）——话多的角色不该只有一个收尾，像逐句套模板`);
+    }
+    for (const s of selves) {
+      const owners = OWNED_SELF[s];
+      if (owners && !owners.includes(id)) flag.push(`${who} 用了 ${s}——那是 ${owners.map((o) => base[o] ? base[o].cn : o).join('／')} 的自称`);
+    }
+    if (b.self && selves.length && !selves.includes(b.self) && /^[\u3040-\u30ff]/.test(b.self)) {
+      flag.push(`${who} 稿里没出现她的主自称 ${b.self}（基线 ${b.selfPct}%）——自称出现率低是常态，但一句都没有要先确认`);
+    }
+  }
+  // 全篇级
+  const you = rows.filter((r) => /あなた|あんた/.test(r.jp)).length;
+  if (you / rows.length > 0.05) flag.push(`全篇 ${you} 句用了 あなた／あんた（${((you / rows.length) * 100).toFixed(0)}%）——日语里熟人之间默认是名字或省略，查 03d`);
+  if (srcFile && fs.existsSync(srcFile)) {
+    const cn = fs.readFileSync(srcFile, 'utf8').split('\n').filter((l) => l.trim() && !/^[【\[]/.test(l.trim()));
+    if (cn.length === rows.length) {
+      const ratios = rows.map((r, i) => jpLen(r.jp) / Math.max(1, cnLen(cn[i].replace(/^[^：:]*[：:]/, ''))));
+      const mean = ratios.reduce((a, b) => a + b, 0) / ratios.length;
+      const sd = Math.sqrt(ratios.reduce((a, b) => a + (b - mean) ** 2, 0) / ratios.length);
+      const cv = sd / mean;
+      console.log(`\n中日行数一致（${cn.length}），逐句长度比 ${mean.toFixed(2)} ± ${cv.toFixed(2)}（变异系数）`);
+      if (cv < 0.18 && cn.length >= 12) flag.push(`中日逐句长度几乎等比（变异系数 ${cv.toFixed(2)}）——人做会拆句合句、长短不齐，这个形状像逐句直译`);
+    } else {
+      console.log(`\n中日行数不一致（中 ${cn.length} / 日 ${rows.length}）——正常，说明有拆句或合句`);
+    }
+  }
+  console.log('');
+  if (!flag.length) { console.log('✓ 机器查得动的项都过。剩下的只有「这句为什么这么说」——抽查任意一句，答不出就回炉。'); return; }
+  console.log(`⚠ ${flag.length} 项提示（机器只查得动形式，查不动意思）：`);
+  for (const f2 of flag) console.log('  · ' + f2);
+  console.log('\n逐条核对：形式对了不代表逐句想过；形式不对基本可以确定没想过。');
+  process.exit(1);
+}
+
 // ---------- 分发 ----------
 switch (cmd) {
   case 'self': await cmdSelf(args[0]); break;
   case 'tail': await cmdTail(args[0], args[1]); break;
   case 'read': cmdRead(); break;
+  case 'audit': cmdAudit(args[0] || opt.in, opt.src); break;
   case 'call': await cmdCall(args[0], args[1]); break;
   case 'map': await cmdMap(args[0]); break;
   case 'model': await cmdModel(args[0]); break;
